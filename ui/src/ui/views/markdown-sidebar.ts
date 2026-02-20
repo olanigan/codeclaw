@@ -1,4 +1,5 @@
 import { html } from "lit";
+import { guard } from "lit/directives/guard.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
@@ -29,7 +30,13 @@ export function renderMarkdownSidebar(props: MarkdownSidebarProps) {
               </button>
             `
             : props.content
-              ? html`<div class="sidebar-markdown">${unsafeHTML(toSanitizedMarkdownHtml(props.content))}</div>`
+              ? guard(
+                  [props.content],
+                  () =>
+                    html`<div class="sidebar-markdown">${unsafeHTML(
+                      toSanitizedMarkdownHtml(props.content!),
+                    )}</div>`,
+                )
               : html`
                   <div class="muted">No content available</div>
                 `
