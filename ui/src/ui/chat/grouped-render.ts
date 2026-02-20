@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { guard } from "lit/directives/guard.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { AssistantIdentity } from "../assistant-identity.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
@@ -239,7 +240,6 @@ function renderGroupedMessage(
   const extractedThinking =
     opts.showReasoning && role === "assistant" ? extractThinkingCached(message) : null;
   const markdownBase = extractedText?.trim() ? extractedText : null;
-  const reasoningMarkdown = extractedThinking ? formatReasoningMarkdown(extractedThinking) : null;
   const markdown = markdownBase;
   const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
 
@@ -265,15 +265,27 @@ function renderGroupedMessage(
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
       ${renderMessageImages(images)}
       ${
-        reasoningMarkdown
-          ? html`<div class="chat-thinking">${unsafeHTML(
-              toSanitizedMarkdownHtml(reasoningMarkdown),
-            )}</div>`
+        extractedThinking
+          ? guard([extractedThinking], () => {
+              const reasoningMarkdown = formatReasoningMarkdown(extractedThinking);
+              if (!reasoningMarkdown) {
+                return nothing;
+              }
+              return html`<div class="chat-thinking">${unsafeHTML(
+                toSanitizedMarkdownHtml(reasoningMarkdown),
+              )}</div>`;
+            })
           : nothing
       }
       ${
         markdown
-          ? html`<div class="chat-text" dir="${detectTextDirection(markdown)}">${unsafeHTML(toSanitizedMarkdownHtml(markdown))}</div>`
+          ? guard(
+              [markdown],
+              () =>
+                html`<div class="chat-text" dir="${detectTextDirection(markdown)}">${unsafeHTML(
+                  toSanitizedMarkdownHtml(markdown),
+                )}</div>`,
+            )
           : nothing
       }
       ${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}
