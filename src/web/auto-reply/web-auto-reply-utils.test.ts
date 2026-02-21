@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { saveSessionStore } from "../../config/sessions.js";
+import { _clearLidCacheForTest } from "../../utils.js";
 import { isBotMentionedFromTargets, resolveMentionTargets } from "./mentions.js";
 import { getSessionSnapshot } from "./session-snapshot.js";
 import type { WebInboundMsg } from "./types.js";
@@ -89,6 +90,7 @@ describe("resolveMentionTargets with @lid mapping", () => {
   });
 
   afterAll(async () => {
+    _clearLidCacheForTest();
     if (!authDir) {
       return;
     }
