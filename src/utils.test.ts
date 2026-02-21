@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  _clearLidCacheForTest,
   assertWebChannel,
   CONFIG_DIR,
   ensureDir,
@@ -83,6 +84,10 @@ describe("normalizeE164 & toWhatsappJid", () => {
 });
 
 describe("jidToE164", () => {
+  afterEach(() => {
+    _clearLidCacheForTest();
+  });
+
   it("maps @lid using reverse mapping file", () => {
     const mappingPath = path.join(CONFIG_DIR, "credentials", "lid-mapping-123_reverse.json");
     const original = fs.readFileSync;
@@ -179,6 +184,10 @@ describe("shortenHomeInString", () => {
 });
 
 describe("resolveJidToE164", () => {
+  afterEach(() => {
+    _clearLidCacheForTest();
+  });
+
   it("resolves @lid via lidLookup when mapping file is missing", async () => {
     const lidLookup = {
       getPNForLID: vi.fn().mockResolvedValue("777:0@s.whatsapp.net"),
