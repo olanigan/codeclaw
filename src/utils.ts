@@ -141,6 +141,14 @@ type LidLookup = {
   getPNForLID?: (jid: string) => Promise<string | null>;
 };
 
+// Caches LID -> E164 mappings to avoid synchronous FS reads
+const lidToE164Cache = new Map<string, string | null>();
+const MAX_LID_CACHE_SIZE = 1000;
+
+export function _clearLidCacheForTest() {
+  lidToE164Cache.clear();
+}
+
 function resolveLidMappingDirs(opts?: JidToE164Options): string[] {
   const dirs = new Set<string>();
   const addDir = (dir?: string | null) => {
@@ -159,8 +167,22 @@ function resolveLidMappingDirs(opts?: JidToE164Options): string[] {
 }
 
 function readLidReverseMapping(lid: string, opts?: JidToE164Options): string | null {
+  // Create a composite key to ensure correct results across different contexts
+  const cacheKey = `${lid}|${opts?.authDir || ""}|${(opts?.lidMappingDirs || []).join(",")}`;
+
+  if (lidToE164Cache.has(cacheKey)) {
+    const val = lidToE164Cache.get(cacheKey) ?? null;
+    // Refresh LRU order
+    lidToE164Cache.delete(cacheKey);
+    lidToE164Cache.set(cacheKey, val);
+    return val;
+  }
+
   const mappingFilename = `lid-mapping-${lid}_reverse.json`;
   const mappingDirs = resolveLidMappingDirs(opts);
+
+  let result: string | null = null;
+
   for (const dir of mappingDirs) {
     const mappingPath = path.join(dir, mappingFilename);
     try {
@@ -169,12 +191,23 @@ function readLidReverseMapping(lid: string, opts?: JidToE164Options): string | n
       if (phone === null || phone === undefined) {
         continue;
       }
-      return normalizeE164(String(phone));
+      result = normalizeE164(String(phone));
+      break;
     } catch {
       // Try the next location.
     }
   }
-  return null;
+
+  // Simple LRU-like eviction: if cache is full, delete the oldest entry (first inserted)
+  if (lidToE164Cache.size >= MAX_LID_CACHE_SIZE) {
+    const firstKey = lidToE164Cache.keys().next().value;
+    if (firstKey !== undefined) {
+      lidToE164Cache.delete(firstKey);
+    }
+  }
+
+  lidToE164Cache.set(cacheKey, result);
+  return result;
 }
 
 export function jidToE164(jid: string, opts?: JidToE164Options): string | null {
