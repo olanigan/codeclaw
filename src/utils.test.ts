@@ -6,6 +6,7 @@ import {
   assertWebChannel,
   CONFIG_DIR,
   ensureDir,
+  _clearLidCacheForTest,
   jidToE164,
   normalizeE164,
   normalizePath,
@@ -124,6 +125,114 @@ describe("jidToE164", () => {
     expect(jidToE164("321@lid", { lidMappingDirs: [first, second] })).toBe("+123321");
     fs.rmSync(first, { recursive: true, force: true });
     fs.rmSync(second, { recursive: true, force: true });
+  });
+
+  it("caches lookup results", () => {
+    _clearLidCacheForTest();
+    const authDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-"));
+    const mappingPath = path.join(authDir, "lid-mapping-999_reverse.json");
+    fs.writeFileSync(mappingPath, JSON.stringify("999123"));
+
+    const spy = vi.spyOn(fs, "readFileSync");
+
+    // First call reads from file
+    expect(jidToE164("999@lid", { authDir })).toBe("+999123");
+
+    // Second call uses cache
+    expect(jidToE164("999@lid", { authDir })).toBe("+999123");
+
+    const calls = spy.mock.calls.filter((args) => args[0] === mappingPath);
+    expect(calls.length).toBe(1);
+
+    fs.rmSync(authDir, { recursive: true, force: true });
+    spy.mockRestore();
+    _clearLidCacheForTest();
+  });
+
+  it("respects different authDirs (cache isolation)", () => {
+    _clearLidCacheForTest();
+    const authDir1 = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth1-"));
+    const authDir2 = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth2-"));
+
+    // Setup distinct mappings for same LID in different dirs
+    fs.writeFileSync(path.join(authDir1, "lid-mapping-777_reverse.json"), JSON.stringify("777001"));
+    fs.writeFileSync(path.join(authDir2, "lid-mapping-777_reverse.json"), JSON.stringify("777002"));
+
+    expect(jidToE164("777@lid", { authDir: authDir1 })).toBe("+777001");
+    expect(jidToE164("777@lid", { authDir: authDir2 })).toBe("+777002");
+
+    // Verify cache hit for first context still works
+    expect(jidToE164("777@lid", { authDir: authDir1 })).toBe("+777001");
+
+    fs.rmSync(authDir1, { recursive: true, force: true });
+    fs.rmSync(authDir2, { recursive: true, force: true });
+    _clearLidCacheForTest();
+  });
+
+  it("evicts old entries when cache is full", () => {
+    _clearLidCacheForTest();
+    const authDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-evict-"));
+
+    const spy = vi.spyOn(fs, "readFileSync");
+
+    // Max cache size is 1000. We'll add 1001 entries.
+    // 0..999 are the first 1000. 1000 is the 1001st.
+    // Entry 0 should be evicted.
+
+    for (let i = 0; i < 1001; i++) {
+      const lid = `${100000 + i}`; // Ensure digits
+      const mappingPath = path.join(authDir, `lid-mapping-${lid}_reverse.json`);
+      fs.writeFileSync(mappingPath, JSON.stringify(`${i}`));
+      jidToE164(`${lid}@lid`, { authDir });
+    }
+
+    spy.mockClear();
+
+    // 100000 should have been evicted (oldest). Should trigger FS read.
+    const lid0 = "100000";
+    jidToE164(`${lid0}@lid`, { authDir });
+    const calls0 = spy.mock.calls.filter((args) => String(args[0]).includes(`lid-mapping-${lid0}_reverse.json`));
+    expect(calls0.length).toBeGreaterThan(0);
+
+    // 101000 (newest) should be in cache. Should NOT trigger FS read.
+    spy.mockClear();
+    const lid1000 = "101000";
+    jidToE164(`${lid1000}@lid`, { authDir });
+    const calls1000 = spy.mock.calls.filter((args) => String(args[0]).includes(`lid-mapping-${lid1000}_reverse.json`));
+    expect(calls1000.length).toBe(0);
+
+    fs.rmSync(authDir, { recursive: true, force: true });
+    spy.mockRestore();
+    _clearLidCacheForTest();
+  });
+
+  it("caches failed lookups (negative caching)", () => {
+    _clearLidCacheForTest();
+    const authDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-"));
+    const lid = "8888";
+    const filename = `lid-mapping-${lid}_reverse.json`;
+
+    const spy = vi.spyOn(fs, "readFileSync");
+
+    // First call searches files and fails
+    expect(jidToE164(`${lid}@lid`, { authDir })).toBe(null);
+
+    // Count how many times it tried to read this specific file across all directories
+    const callsFirst = spy.mock.calls.filter((args) => String(args[0]).endsWith(filename));
+    expect(callsFirst.length).toBeGreaterThan(0);
+
+    spy.mockClear();
+
+    // Second call uses cache (should still be null)
+    expect(jidToE164(`${lid}@lid`, { authDir })).toBe(null);
+
+    // Should not attempt to read file again
+    const callsSecond = spy.mock.calls.filter((args) => String(args[0]).endsWith(filename));
+    expect(callsSecond.length).toBe(0);
+
+    fs.rmSync(authDir, { recursive: true, force: true });
+    spy.mockRestore();
+    _clearLidCacheForTest();
   });
 });
 
