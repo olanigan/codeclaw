@@ -158,9 +158,25 @@ function resolveLidMappingDirs(opts?: JidToE164Options): string[] {
   return [...dirs];
 }
 
+const LID_CACHE_MAX_SIZE = 1000;
+const lidCache = new Map<string, string | null>();
+
+export function _clearLidCacheForTest() {
+  lidCache.clear();
+}
+
 function readLidReverseMapping(lid: string, opts?: JidToE164Options): string | null {
-  const mappingFilename = `lid-mapping-${lid}_reverse.json`;
   const mappingDirs = resolveLidMappingDirs(opts);
+  const cacheKey = `${lid}|${JSON.stringify(mappingDirs)}`;
+
+  if (lidCache.has(cacheKey)) {
+    const val = lidCache.get(cacheKey)!;
+    lidCache.delete(cacheKey);
+    lidCache.set(cacheKey, val);
+    return val;
+  }
+
+  const mappingFilename = `lid-mapping-${lid}_reverse.json`;
   for (const dir of mappingDirs) {
     const mappingPath = path.join(dir, mappingFilename);
     try {
@@ -169,11 +185,30 @@ function readLidReverseMapping(lid: string, opts?: JidToE164Options): string | n
       if (phone === null || phone === undefined) {
         continue;
       }
-      return normalizeE164(String(phone));
+      const result = normalizeE164(String(phone));
+
+      if (lidCache.size >= LID_CACHE_MAX_SIZE) {
+        const firstKey = lidCache.keys().next().value;
+        if (firstKey) {
+          lidCache.delete(firstKey);
+        }
+      }
+      lidCache.set(cacheKey, result);
+
+      return result;
     } catch {
       // Try the next location.
     }
   }
+
+  if (lidCache.size >= LID_CACHE_MAX_SIZE) {
+    const firstKey = lidCache.keys().next().value;
+    if (firstKey) {
+      lidCache.delete(firstKey);
+    }
+  }
+  lidCache.set(cacheKey, null);
+
   return null;
 }
 

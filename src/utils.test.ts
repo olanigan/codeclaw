@@ -18,6 +18,7 @@ import {
   sleep,
   toWhatsappJid,
   withWhatsAppPrefix,
+  _clearLidCacheForTest,
 } from "./utils.js";
 
 describe("normalizePath", () => {
@@ -124,6 +125,47 @@ describe("jidToE164", () => {
     expect(jidToE164("321@lid", { lidMappingDirs: [first, second] })).toBe("+123321");
     fs.rmSync(first, { recursive: true, force: true });
     fs.rmSync(second, { recursive: true, force: true });
+  });
+
+  it("verifies caching prevents file reads", () => {
+    _clearLidCacheForTest();
+    const authDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-cache-"));
+    const lid = "987654";
+    const mappingPath = path.join(authDir, `lid-mapping-${lid}_reverse.json`);
+    fs.writeFileSync(mappingPath, JSON.stringify("555987654"));
+
+    const spy = vi.spyOn(fs, "readFileSync");
+
+    const res1 = jidToE164(`${lid}@lid`, { authDir });
+    expect(res1).toBe("+555987654");
+    const callsAfterFirst = spy.mock.calls.length;
+
+    const res2 = jidToE164(`${lid}@lid`, { authDir });
+    expect(res2).toBe("+555987654");
+    const callsAfterSecond = spy.mock.calls.length;
+
+    expect(callsAfterSecond - callsAfterFirst).toBe(0);
+
+    spy.mockRestore();
+    fs.rmSync(authDir, { recursive: true, force: true });
+    _clearLidCacheForTest();
+  });
+
+  it("verifies cache isolation between different authDirs", () => {
+    _clearLidCacheForTest();
+    const authDir1 = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-1-"));
+    const authDir2 = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-2-"));
+    const lid = "111222";
+
+    fs.writeFileSync(path.join(authDir1, `lid-mapping-${lid}_reverse.json`), JSON.stringify("555111"));
+    fs.writeFileSync(path.join(authDir2, `lid-mapping-${lid}_reverse.json`), JSON.stringify("555222"));
+
+    expect(jidToE164(`${lid}@lid`, { authDir: authDir1 })).toBe("+555111");
+    expect(jidToE164(`${lid}@lid`, { authDir: authDir2 })).toBe("+555222");
+
+    fs.rmSync(authDir1, { recursive: true, force: true });
+    fs.rmSync(authDir2, { recursive: true, force: true });
+    _clearLidCacheForTest();
   });
 });
 
