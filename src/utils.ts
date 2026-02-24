@@ -158,7 +158,16 @@ function resolveLidMappingDirs(opts?: JidToE164Options): string[] {
   return [...dirs];
 }
 
+const lidCache = new Map<string, string>();
+
+export function _clearLidCacheForTest() {
+  lidCache.clear();
+}
+
 function readLidReverseMapping(lid: string, opts?: JidToE164Options): string | null {
+  if (lidCache.has(lid)) {
+    return lidCache.get(lid)!;
+  }
   const mappingFilename = `lid-mapping-${lid}_reverse.json`;
   const mappingDirs = resolveLidMappingDirs(opts);
   for (const dir of mappingDirs) {
@@ -169,7 +178,12 @@ function readLidReverseMapping(lid: string, opts?: JidToE164Options): string | n
       if (phone === null || phone === undefined) {
         continue;
       }
-      return normalizeE164(String(phone));
+      const normalized = normalizeE164(String(phone));
+      if (lidCache.size > 1000) {
+        lidCache.clear();
+      }
+      lidCache.set(lid, normalized);
+      return normalized;
     } catch {
       // Try the next location.
     }
@@ -177,16 +191,19 @@ function readLidReverseMapping(lid: string, opts?: JidToE164Options): string | n
   return null;
 }
 
+const JID_REGEX = /^(\d+)(?::\d+)?@(s\.whatsapp\.net|hosted)$/;
+const LID_REGEX = /^(\d+)(?::\d+)?@(lid|hosted\.lid)$/;
+
 export function jidToE164(jid: string, opts?: JidToE164Options): string | null {
   // Convert a WhatsApp JID (with optional device suffix, e.g. 1234:1@s.whatsapp.net) back to +1234.
-  const match = jid.match(/^(\d+)(?::\d+)?@(s\.whatsapp\.net|hosted)$/);
+  const match = jid.match(JID_REGEX);
   if (match) {
     const digits = match[1];
     return `+${digits}`;
   }
 
   // Support @lid format (WhatsApp Linked ID) - look up reverse mapping
-  const lidMatch = jid.match(/^(\d+)(?::\d+)?@(lid|hosted\.lid)$/);
+  const lidMatch = jid.match(LID_REGEX);
   if (lidMatch) {
     const lid = lidMatch[1];
     const phone = readLidReverseMapping(lid, opts);
