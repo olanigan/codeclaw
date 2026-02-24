@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  _clearLidCacheForTest,
   assertWebChannel,
   CONFIG_DIR,
   ensureDir,
@@ -19,6 +20,10 @@ import {
   toWhatsappJid,
   withWhatsAppPrefix,
 } from "./utils.js";
+
+afterEach(() => {
+  _clearLidCacheForTest();
+});
 
 describe("normalizePath", () => {
   it("adds leading slash when missing", () => {
