@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  _clearLidCacheForTest,
   assertWebChannel,
   CONFIG_DIR,
   ensureDir,
@@ -124,6 +125,27 @@ describe("jidToE164", () => {
     expect(jidToE164("321@lid", { lidMappingDirs: [first, second] })).toBe("+123321");
     fs.rmSync(first, { recursive: true, force: true });
     fs.rmSync(second, { recursive: true, force: true });
+  });
+
+  it("caches the result to avoid repeated file reads", () => {
+    const authDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-"));
+    const mappingPath = path.join(authDir, "lid-mapping-999_reverse.json");
+    fs.writeFileSync(mappingPath, JSON.stringify("5559999"));
+
+    _clearLidCacheForTest();
+
+    const spy = vi.spyOn(fs, "readFileSync");
+
+    expect(jidToE164("999@lid", { authDir })).toBe("+5559999");
+    expect(spy).toHaveBeenCalledWith(mappingPath, "utf8");
+    spy.mockClear();
+
+    expect(jidToE164("999@lid", { authDir })).toBe("+5559999");
+    expect(spy).not.toHaveBeenCalledWith(mappingPath, "utf8");
+
+    fs.rmSync(authDir, { recursive: true, force: true });
+    spy.mockRestore();
+    _clearLidCacheForTest();
   });
 });
 
