@@ -5,11 +5,17 @@ export function pruneMapToMaxSize<K, V>(map: Map<K, V>, maxSize: number): void {
     return;
   }
 
-  while (map.size > limit) {
-    const oldest = map.keys().next();
-    if (oldest.done) {
+  const toRemove = map.size - limit;
+  if (toRemove <= 0) {
+    return;
+  }
+
+  const keys = map.keys();
+  for (let i = 0; i < toRemove; i++) {
+    const next = keys.next();
+    if (next.done) {
       break;
     }
-    map.delete(oldest.value);
+    map.delete(next.value);
   }
 }
